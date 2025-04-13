@@ -3,7 +3,7 @@ import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
 
 class KeypointPredictor(nn.Module):
-    def __init__(self, num_keypoints = 100, heatmap_dims = (32,32)): # N is the number of keypoints
+    def __init__(self, num_keypoints = 100, heatmap_dims = (32,32), temperature=0.1): # N is the number of keypoints
         super(KeypointPredictor, self).__init__()
         resnet = resnet18(ResNet18_Weights.IMAGENET1K_V1)
         self.resnet = nn.Sequential(*list(resnet.children())[:-5])
@@ -19,6 +19,8 @@ class KeypointPredictor(nn.Module):
 
         self.register_buffer("x_map", x_map)
         self.register_buffer("y_map", y_map)
+
+        self.temperature = temperature
 
     def compute_spatial_expectation(self, heatmaps):
         """
@@ -44,9 +46,9 @@ class KeypointPredictor(nn.Module):
         heatmaps = x.view(B, K, -1) / self.temperature
         heatmaps = torch.softmax(heatmaps, dim=-1)
         heatmaps = heatmaps.view(B, K, H, W)
-        
-        soft_keypoints = self.compute_spatial_expectation(x)
+
+        soft_keypoints = self.compute_spatial_expectation(heatmaps)
 
         delta = (torch.round(soft_keypoints) - soft_keypoints).detach()
         
-        return soft_keypoints + delta, soft_keypoints, x
+        return soft_keypoints + delta, soft_keypoints, heatmaps
