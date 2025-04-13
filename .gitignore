@@ -1,3 +1,8 @@
 /dataset*
 /data*
 /lightning_logs
+*.pyc
+**/*.pyc
+__pycache__/
+**/__pycache__/
+

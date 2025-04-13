@@ -3,7 +3,7 @@ import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
 
 class KeypointPredictor(nn.Module):
-    def __init__(self, num_keypoints = 100, heatmap_dims = (32,32), temperature=0.1): # N is the number of keypoints
+    def __init__(self, num_keypoints = 100, heatmap_dims = (32,32), temperature=1): # N is the number of keypoints
         super(KeypointPredictor, self).__init__()
         resnet = resnet18(ResNet18_Weights.IMAGENET1K_V1)
         self.resnet = nn.Sequential(*list(resnet.children())[:-5])
