@@ -3,7 +3,7 @@ import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
 
 class ImageDecoder(nn.Module):
-    def __init__(self, feature_channels, num_keypoints, output_channels=3, heatmap_dims = (32,32)):
+    def __init__(self, feature_channels, num_keypoints, output_channels=3, heatmap_dims = (32,32), condense = False):
         """
         Args:
          - feature_channels: number of channels in the encoder's feature maps.
@@ -14,7 +14,7 @@ class ImageDecoder(nn.Module):
         
         # The input to the decoder is the concatenation of feature maps and heatmaps.
         input_channels = feature_channels + num_keypoints
-
+        self.num_keypoints = num_keypoints
         # Initial convolution layers to fuse the information.
         self.conv1 = nn.Conv2d(input_channels, 64, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
@@ -28,7 +28,7 @@ class ImageDecoder(nn.Module):
         self.conv4 = nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1)  # conv (to smoothen)
         self.conv5 = nn.Conv2d(32, output_channels, kernel_size=3, stride=1, padding=1)  # final conv (to smoothen)
 
-        self.relu = nn.ReLU()
+        self.act = nn.SiLU()
         self.sigmoid = nn.Sigmoid()  # Constrain output between 0 and 1 (for normalized images)
 
         H,W = heatmap_dims
@@ -36,6 +36,7 @@ class ImageDecoder(nn.Module):
         x_map = torch.arange(0, W).view(1, 1, 1, W).float()
         self.register_buffer("x_map", x_map)
         self.register_buffer("y_map", y_map)
+        self.condense = condense
 
     def forward(self, feature_maps, keypoints):
         """
@@ -48,19 +49,28 @@ class ImageDecoder(nn.Module):
         # Concatenate along channel dimension
 
         heatmaps = self.render_gaussian_heatmaps(keypoints)
+        if self.condense:
+            heatmaps = self.logsumexp_pooling(heatmaps)
+
         x = torch.cat([feature_maps, heatmaps], dim=1)  # Shape: [B, C + N, H, W]
 
         # Fuse the features with standard convolutions
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
+        x = self.act(self.conv1(x))
+        x = self.act(self.conv2(x))
 
         # Upsample using transpose convolutions
-        x = self.relu(self.deconv1(x))
-        x = self.relu(self.deconv2(x))
-        x = self.sigmoid(self.deconv3(x))  # You can also use Tanh if your outputs are in [-1, 1]
+        x = self.act(self.deconv1(x))
+        x = self.act(self.deconv2(x))
+        x = torch.tanh(self.deconv3(x))  # You can also use Tanh if your outputs are in [-1, 1]
 
-        x = self.relu(self.conv4(x))
-        x = self.sigmoid(self.conv5(x))
+        x = self.act(self.conv4(x))
+        x = self.conv5(x)
+
+        logits = x[:, 0:1]                # no activation (raw logits for BCE)
+        t2no   = torch.tanh(x[:, 1:2])      # for normalized regression
+        t2nd   = torch.tanh(x[:, 2:3])
+
+        x = torch.cat([logits, t2no, t2nd], dim=1)
 
         return x
     
@@ -76,3 +86,27 @@ class ImageDecoder(nn.Module):
         heatmaps = torch.exp(-dist_sq / (2 * sigma ** 2))
 
         return heatmaps
+    
+    def logsumexp_pooling(self, heatmaps, beta=10.0):
+        """
+        Consolidate heatmaps using LogSumExp pooling.
+
+        Args:
+            heatmaps: Tensor of shape (B, K, H, W) where K = num_keypoints
+            num_groups: Number of final heatmaps desired
+            beta: Temperature parameter for LogSumExp
+
+        Returns:
+            Tensor of shape (B, num_groups, H, W)
+        """
+        B, K, H, W = heatmaps.shape
+        assert K//self.num_keypoints
+        group_size = K//self.num_keypoints
+
+        # Reshape: (B, num_groups, group_size, H, W)
+        grouped = heatmaps.view(B, self.num_keypoints, group_size, H, W)
+
+        # LogSumExp pooling over the group dimension
+        pooled = (1.0 / beta) * torch.logsumexp(beta * grouped, dim=2)  # shape: (B, num_groups, H, W)
+
+        return pooled
