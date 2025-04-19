@@ -38,7 +38,7 @@ class ImageDecoder(nn.Module):
         self.register_buffer("y_map", y_map)
         self.condense = condense
 
-    def forward(self, feature_maps, keypoints):
+    def forward(self, feature_maps, keypoints, return_heatmaps=False):
         """
         Args:
          - feature_maps: [B, C, H, W] tensor from the encoder.
@@ -47,11 +47,13 @@ class ImageDecoder(nn.Module):
          - reconstructed_image: [B, output_channels, H_out, W_out] tensor.
         """
         # Concatenate along channel dimension
-
+        H, W = self.y_map.shape[-2], self.x_map.shape[-1]
+        eps = 1e-3
+        keypoints = keypoints.clamp(min=0.0, max=min(H, W) - eps)
         heatmaps = self.render_gaussian_heatmaps(keypoints)
         if self.condense:
             heatmaps = self.logsumexp_pooling(heatmaps)
-
+        feature_maps = torch.zeros_like(feature_maps)
         x = torch.cat([feature_maps, heatmaps], dim=1)  # Shape: [B, C + N, H, W]
 
         # Fuse the features with standard convolutions
@@ -72,9 +74,12 @@ class ImageDecoder(nn.Module):
 
         x = torch.cat([logits, t2no, t2nd], dim=1)
 
+        if return_heatmaps:
+            return x, heatmaps
+
         return x
     
-    def render_gaussian_heatmaps(self, keypoints, sigma=1.0):
+    def render_gaussian_heatmaps(self, keypoints, sigma=2.0):
         B, N, _ = keypoints.shape
 
         # Split keypoints

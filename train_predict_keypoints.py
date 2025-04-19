@@ -155,7 +155,7 @@ class LitKeypointDetector(L.LightningModule):
         self.keypoint_generator = keypoint_encoder
         self.feature_encoder = feature_encoder
         self.image_reconstructor = feature_decoder
-        self.alpha = 0
+        self.alpha = 0.0001
 
     def training_step(self, batch, batch_idx):
         v1, vt = batch
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     data_root="./dataset_00", batch_size=16, min_offset=5, max_offset=30, num_workers=8
 )
     
-    trainer = L.Trainer(max_epochs=200, callbacks=[AlphaScheduler()])
+    trainer = L.Trainer(max_epochs=100, callbacks=[AlphaScheduler()])
     model = LitKeypointDetector(KeypointPredictor(100), ImageEncoder(), ImageDecoder(64, 100))
 
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)

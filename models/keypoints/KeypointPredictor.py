@@ -9,7 +9,7 @@ class KeypointPredictor(nn.Module):
         self.resnet = nn.Sequential(*list(resnet.children())[:-5])
 
         self.heatmap_head = nn.Conv2d(in_channels=64, out_channels=num_keypoints, kernel_size=1)
-        self.relu = nn.ReLU()
+        self.silu = nn.SiLU()
         self.sigmoid = nn.Sigmoid()
 
         H, W = heatmap_dims
