@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-def masked_mse(output, gt, return_mask=False):
+def masked_mse(output, gt):
     gt_mask = (gt[:,0]!=1).float()
     bce = F.binary_cross_entropy_with_logits(output[:,0],gt_mask)
 
@@ -17,8 +17,6 @@ def masked_mse(output, gt, return_mask=False):
         mse_t2no = torch.tensor(0.0, device=output.device)
         mse_t2nd = torch.tensor(0.0, device=output.device)
 
-    total_loss = bce + 10*mse_t2no + 10*mse_t2nd
-    if return_mask:
-        return total_loss, bce, mse_t2no, mse_t2nd, mask.unsqueeze(1)
-    else:
-        return total_loss, bce, mse_t2no, mse_t2nd
+    total_loss = (1/10)*bce + mse_t2no + mse_t2nd
+
+    return total_loss, bce, mse_t2no, mse_t2nd, mask.unsqueeze(1)

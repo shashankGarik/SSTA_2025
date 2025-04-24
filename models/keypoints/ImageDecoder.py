@@ -53,7 +53,7 @@ class ImageDecoder(nn.Module):
         heatmaps = self.render_gaussian_heatmaps(keypoints)
         if self.condense:
             heatmaps = self.logsumexp_pooling(heatmaps)
-        feature_maps = torch.zeros_like(feature_maps)
+        #     feature_maps = torch.zeros_like(feature_maps)
         x = torch.cat([feature_maps, heatmaps], dim=1)  # Shape: [B, C + N, H, W]
 
         # Fuse the features with standard convolutions
@@ -76,7 +76,6 @@ class ImageDecoder(nn.Module):
 
         if return_heatmaps:
             return x, heatmaps
-
         return x
     
     def render_gaussian_heatmaps(self, keypoints, sigma=2.0):
