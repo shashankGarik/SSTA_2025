@@ -211,7 +211,7 @@ class LitKeypointDetector(L.LightningModule):
             # Clamp images for visualization
             v0_img = v1[0].clamp(0, 1)
             v1_img = vt[0].clamp(0, 1)
-            v1_pred_img = vt_pred[0].clamp(0, 1)
+            v1_pred_img = (vt_pred[0]+1)/2
 
             # Overlay keypoints
             vis_v0 = draw_keypoints_on_image(v0_img, scaled_kps_v0, color='b')  # Blue keypoints
@@ -233,7 +233,7 @@ class LitKeypointDetector(L.LightningModule):
     
     def keypoint_loss(self, vt, vt_pred, v0_heat, vt_heat):
 
-        mse = nn.functional.mse_loss(vt, vt_pred)
+        mse = nn.functional.mse_loss((vt*2)-1, vt_pred)
 
         condensation_loss_1 = self.condensation_loss_entropy(v0_heat)
         condensation_loss_t = self.condensation_loss_entropy(vt_heat)

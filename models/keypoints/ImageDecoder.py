@@ -29,7 +29,7 @@ class ImageDecoder(nn.Module):
         self.conv5 = nn.Conv2d(32, output_channels, kernel_size=3, stride=1, padding=1)  # final conv (to smoothen)
 
         self.act = nn.SiLU()
-        self.sigmoid = nn.Sigmoid()  # Constrain output between 0 and 1 (for normalized images)
+        self.tanh = nn.Tanh()  # Constrain output between -1 and 1 (for normalized images)
 
         H,W = heatmap_dims
         y_map = torch.arange(0, H).view(1, 1, H, 1).float()
@@ -38,7 +38,10 @@ class ImageDecoder(nn.Module):
         self.register_buffer("y_map", y_map)
         self.condense = condense
 
-    def forward(self, feature_maps, keypoints, return_heatmaps=False):
+        self.layernorm = nn.InstanceNorm2d(32)
+
+
+    def forward(self, feature_maps, keypoints, return_heatmaps=False, return_t2nod=False):
         """
         Args:
          - feature_maps: [B, C, H, W] tensor from the encoder.
@@ -47,9 +50,7 @@ class ImageDecoder(nn.Module):
          - reconstructed_image: [B, output_channels, H_out, W_out] tensor.
         """
         # Concatenate along channel dimension
-        H, W = self.y_map.shape[-2], self.x_map.shape[-1]
-        eps = 1e-3
-        keypoints = keypoints.clamp(min=0.0, max=min(H, W) - eps)
+
         heatmaps = self.render_gaussian_heatmaps(keypoints)
         if self.condense:
             heatmaps = self.logsumexp_pooling(heatmaps)
@@ -63,16 +64,20 @@ class ImageDecoder(nn.Module):
         # Upsample using transpose convolutions
         x = self.act(self.deconv1(x))
         x = self.act(self.deconv2(x))
-        x = torch.tanh(self.deconv3(x))  # You can also use Tanh if your outputs are in [-1, 1]
+        x = self.act(self.deconv3(x))  
+        x = self.layernorm(x)
 
         x = self.act(self.conv4(x))
         x = self.conv5(x)
 
-        logits = x[:, 0:1]                # no activation (raw logits for BCE)
-        t2no   = torch.tanh(x[:, 1:2])      # for normalized regression
-        t2nd   = torch.tanh(x[:, 2:3])
+        if return_t2nod:
+            logits = x[:, 0:1]                # no activation (raw logits for BCE)
+            t2no   = self.tanh(x[:, 1:2])      # for normalized regression
+            t2nd   = self.tanh(x[:, 2:3])
 
-        x = torch.cat([logits, t2no, t2nd], dim=1)
+            x = torch.cat([logits, t2no, t2nd], dim=1)
+        else:
+            x = self.tanh(x)
 
         if return_heatmaps:
             return x, heatmaps
